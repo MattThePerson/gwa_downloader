@@ -1,6 +1,9 @@
 
 # general
+dist
+__pycache__
 .venv
+uv.lock
 .vscode
 
 # 
