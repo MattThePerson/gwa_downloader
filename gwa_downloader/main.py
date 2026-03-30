@@ -1,15 +1,19 @@
 import argparse
 from dataclasses import dataclass, fields
-from bs4 import BeautifulSoup
-import os
 from pathlib import Path
-import json
 from datetime import datetime
 
-from gwa_downloader import constants, io, scrape, lib
+from gwa_downloader import (
+    url,
+    io,
+    reddit_post,
+    media_down,
+    helpers,
+    constants,
+)
 
 # ======================================================================================================================
-# region MAIN
+# region Main
 # ======================================================================================================================
 
 @dataclass
@@ -27,7 +31,7 @@ class MainArgs:
         filtered = { k: v for k, v in d.items() if k in valid_keys }
         return MainArgs(**filtered)
 
-def main(url_items: list[lib.URLItem], args: MainArgs):
+def main(url_items: list[url.URLItem], args: MainArgs):
     """  """
 
     offline_site_path = Path('.').resolve()
@@ -38,7 +42,8 @@ def main(url_items: list[lib.URLItem], args: MainArgs):
     if args.list_urls:
         for i in url_items:
             print(i.url)
-    
+        return
+        
     # --------------------------------------------------------------------------
     # STEP 1: scrape metadata
     # --------------------------------------------------------------------------
@@ -48,12 +53,12 @@ def main(url_items: list[lib.URLItem], args: MainArgs):
             print("[{}/{}] \"{}\"".format(idx+1, len(url_items), i.url))
             
             # variables
-            id_, _ = lib.extract_id_and_title(i.url)
+            _, id_, _ = helpers.extract_reddit_url_identifiers(i.url)
             post_data_file = DATA_DIR / f"{id_}.json"
             post_interactions_file = DATA_DIR / f"{id_}-interact.json"
 
             # scrape
-            post_data, post_inter = scrape.scrape_reddit_post_data(id_, i.url, i.tags, i.date_added)
+            post_data, post_inter = reddit_post.scrape_reddit_post_data(id_, i.url, i.tags, i.date_added)
 
             # interactions
             io.write_json(post_inter.json(), post_interactions_file)
@@ -72,39 +77,15 @@ def main(url_items: list[lib.URLItem], args: MainArgs):
                 continue
             
             # [3/3] download media
-            # TODO: put into a function
-            soup = BeautifulSoup(post_data.body_html, 'html.parser')
-            a_els_to_handle = soup.select('a.media-link:not([data-something])')
-            a_els_handled = 0
-            
-            # handle media download
-            for a_idx, a_el in enumerate(a_els_to_handle):
-                href = str(a_el.get("href", ""))
-                assert href != ""
-                ytdlp_data = lib.getUrlData(str(href))
-                assert isinstance(ytdlp_data, dict) and len(ytdlp_data) != 0
-
-                media_id = ytdlp_data['id']
-                media_title = ytdlp_data['title']
-                extractor = ytdlp_data['extractor']
-                ext = ytdlp_data['ext']
-
-                # 
-                savepath_rel = Path("media") / id_ / f"[{extractor}] [{media_id}] {media_title}.{ext}"
-                savepath = offline_site_path / savepath_rel
-                print('  ({}/{}) media: "{}"'.format(a_idx+1, len(a_els_to_handle), savepath))
-                if savepath.exists():
-                    print('media already exists')
-                else:
-                    try:
-                        lib.downloadMedia(href, savepath)
-                    except Exception as e:
-                        print('oh no, something went boo boo')
-                    a_el["data-local-media-src"] = str(savepath_rel)
-                    a_els_handled += 1
+            post_data.body_html, down_count = media_down.download_media_urls_from_post_body(
+                post_data.body_html,
+                id_,
+                offline_site_path,
+            )
 
             # update data_file
-            ...
+            if down_count > 0:
+                io.write_json(post_data.json(), post_data_file)
 
     # --------------------------------------------------------------------------
     # STEP 2: create offline site
@@ -112,14 +93,14 @@ def main(url_items: list[lib.URLItem], args: MainArgs):
 
     if not args.no_site:
 
-        # copy site template files
-        print('copying site_template')
-        # _copy_tree("./site_template", offline_site_path)
-
-        # download jquery (if using)
+        # save post overview data into `data/_general.json`
         ...
 
-        # save post overview data into `data/_general.json`
+        # copy site template files
+        print('copying site_template')
+        # helpers.copy_frontend()
+
+        # download jquery (if using)
         ...
 
     # END MAIN
@@ -128,19 +109,19 @@ def main(url_items: list[lib.URLItem], args: MainArgs):
 # region CLI
 # ======================================================================================================================
 
-def get_url_items(args: argparse.Namespace) -> tuple[list[lib.URLItem], int]:
+def get_url_items(args: argparse.Namespace) -> tuple[list[url.URLItem], int]:
 
     # get urls
     url_items = []
     if args.url:
         url_items = [
-            lib.URLItem(
+            url.URLItem(
                 url = args.url,
                 date_added = str(datetime.now()).split('.')[0],
             )
         ]
     elif args.bookmarks:
-        url_items = lib.get_reddit_urls_from_bookmarks(
+        url_items = url.get_reddit_urls_from_bookmarks(
             browser=args.bookmarks,
             profile=args.browser_profile,
         )
@@ -166,7 +147,7 @@ def get_url_items(args: argparse.Namespace) -> tuple[list[lib.URLItem], int]:
     
     return url_items, 0
 
-# CLI
+# cli
 def cli():
 
     # argument parser

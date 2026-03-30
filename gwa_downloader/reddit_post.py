@@ -1,12 +1,61 @@
+""" for scraping data from reddit posts """
+from dataclasses import dataclass, asdict, field
 from datetime import datetime
 import requests
 from bs4 import BeautifulSoup, Tag
 from http.cookiejar import MozillaCookieJar
 
-from gwa_downloader import constants, struct, helpers
+from gwa_downloader import constants, helpers
 
 # ======================================================================================================================
-# region MISC
+# region Structs
+# ======================================================================================================================
+
+@dataclass
+class JSONifiable():
+    def json(self) -> dict:
+        return asdict(self)
+
+@dataclass
+class RedditComment(JSONifiable):
+    user: str
+    date: str
+    content: str
+    upvotes: str
+    replies: list["RedditComment"]=field(default_factory=list)
+
+    def json(self) -> dict:
+        for i, c in enumerate(self.replies):
+            self.replies[i] = c.json() #type:ignore
+        return asdict(self)
+
+@dataclass
+class RedditPostData(JSONifiable):
+    id_: str
+    url: str
+    subreddit: str
+    author: str
+    date_uploaded: str
+    title_raw: str
+    title: str # title with category and tags removed
+    category: str # eg. [F4M]
+    tags: list[str] # tags from title (eg. [Tag])
+    flair: str
+    body_html: str # html so it contains links
+    media_urls: list[str]
+
+@dataclass
+class RedditPostInteractions(JSONifiable):
+    date_scraped: str
+    upvotes: int=-1
+    comments: list[dict]=field(default_factory=list)
+    # user_data: dict=field(default_factory=dict)
+    user_tags: list[str]=field(default_factory=list)
+    date_added: str=""
+
+
+# ======================================================================================================================
+# region Private
 # ======================================================================================================================
 
 def _fetch_reddit_url_soup(url: str) -> BeautifulSoup:
@@ -38,23 +87,6 @@ def _standardize_reddit_url(url: str) -> str:
     url = 'https://www.reddit.com/r/' + url.split('/r/')[-1]
     return url.split('?')[0]
 
-# def _copy_tree(src: str|Path, dst: str|Path) -> None:
-#     src = Path(src); dst = Path(dst)
-#     for path in src.rglob("*"):
-#         if path.is_file():
-#             rel = path.relative_to(src)
-#             target = dst / rel
-#             target.parent.mkdir(parents=True, exist_ok=True)
-#             shutil.copy2(path, target)  # overwrites if exists
-
-# ======================================================================================================================
-# region POST ITEM
-# ======================================================================================================================
-
-# ======================================================================================================================
-# region METADATA
-# ======================================================================================================================
-
 def _split_raw_title(raw):
     """  """
     parts = raw.split('] ')
@@ -65,7 +97,7 @@ def _split_raw_title(raw):
     tags = parts[1:]
     return category, title, tags
 
-def _getBodyAndMediaLinks(siteTable: Tag):
+def _get_body_and_media_links(siteTable: Tag):
     """ pass this function the .siteTable element. it will extract description html and media links
     and add media-link class to media links """
     media_domains = [
@@ -87,8 +119,7 @@ def _getBodyAndMediaLinks(siteTable: Tag):
     desc_html = desc_el.prettify()
     return desc_html, media_urls
 
-# SCRAPE REDDIT POST
-def _parseGwaSoup(soup: BeautifulSoup) -> tuple[struct.RedditPostData, struct.RedditPostInteractions]:
+def _parse_reddit_post_soup(soup: BeautifulSoup) -> tuple[RedditPostData, RedditPostInteractions]:
     """  """
     siteTable = soup.select_one('#siteTable')
     if siteTable is None:
@@ -100,10 +131,10 @@ def _parseGwaSoup(soup: BeautifulSoup) -> tuple[struct.RedditPostData, struct.Re
     title_raw = siteTable.select('a.title')[0].text
     category, title, tags = _split_raw_title(title_raw)
 
-    body_html, media_urls = _getBodyAndMediaLinks(siteTable)
+    body_html, media_urls = _get_body_and_media_links(siteTable)
 
     # post
-    post = struct.RedditPostData(
+    post = RedditPostData(
         id_ = "",
         subreddit = "",
         url = "",
@@ -119,7 +150,7 @@ def _parseGwaSoup(soup: BeautifulSoup) -> tuple[struct.RedditPostData, struct.Re
     )
 
     # inter
-    inter = struct.RedditPostInteractions(
+    inter = RedditPostInteractions(
         upvotes = helpers.parse_int(siteTable.select('.score.unvoted')[0].text),
         date_scraped = str(datetime.now()).split('.')[0],
         comments = [],
@@ -132,10 +163,10 @@ def _parseGwaSoup(soup: BeautifulSoup) -> tuple[struct.RedditPostData, struct.Re
 # region Public
 # ======================================================================================================================
 
-def scrape_reddit_post_data(id_: str, url: str, tags: list[str], date_added: str) -> tuple[struct.RedditPostData, struct.RedditPostInteractions]:
+def scrape_reddit_post_data(id_: str, url: str, tags: list[str], date_added: str) -> tuple[RedditPostData, RedditPostInteractions]:
     """  """
     soup = _fetch_reddit_url_soup(url)
-    post, inter = _parseGwaSoup(soup)
+    post, inter = _parse_reddit_post_soup(soup)
 
     # hydrate post
     post.id_ = id_
