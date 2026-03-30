@@ -9,9 +9,9 @@ packages = ["gwa_downloader"]
 
 [project]
 name = "gwa-downloader"
-version = "0.0.1"
+version = "0.0.2"
 authors = [{ name="Matt Stirling", email="stirlingmattmarkus@gmail.com" }]
-description = "Downloader for r/GoneWithTheWind"
+description = "Downloader for r/GoneWildAudio"
 readme = "README.md"
 requires-python = ">=3.9"
 classifiers = [
@@ -20,7 +20,9 @@ classifiers = [
 ]
 dependencies = [
     "yt-dlp",
-    "handymatt"
+    "handymatt",
+    "requests",
+    "beautifulsoup4",
 ]
 
 [project.scripts]

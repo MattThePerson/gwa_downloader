@@ -1,5 +1,10 @@
 # Notes
 
+## TODO
+
+- include tags at top of description
+- 
+
 ## Hatch: For package building and publishing
 
 Useful hatch commands:
@@ -8,7 +13,6 @@ Useful hatch commands:
 - `hatch publish`
 - `hatch develop`
 - `hatch version`
-- `hatch publish --dry-run`
 
 ## Target folder structure of frontend
 
