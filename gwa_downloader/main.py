@@ -6,8 +6,7 @@ from pathlib import Path
 import json
 from datetime import datetime
 
-from gwa_downloader.globals import __COOKIES__
-from gwa_downloader import lib
+from gwa_downloader import constants, io, scrape, lib
 
 # ======================================================================================================================
 # region MAIN
@@ -29,6 +28,7 @@ class MainArgs:
         return MainArgs(**filtered)
 
 def main(url_items: list[lib.URLItem], args: MainArgs):
+    """  """
 
     offline_site_path = Path('.').resolve()
     DATA_DIR = offline_site_path / "data"
@@ -37,73 +37,57 @@ def main(url_items: list[lib.URLItem], args: MainArgs):
     # print urls
     if args.list_urls:
         for i in url_items:
-            # print(i.date_added, i.name[:80])
-            print(i.url[:30], i.tags)
-    
-    return
+            print(i.url)
     
     # --------------------------------------------------------------------------
     # STEP 1: scrape metadata
     # --------------------------------------------------------------------------
 
-    if True: # TODO: ???
+    if not args.only_site:
         for idx, i in enumerate(url_items):
             print("[{}/{}] \"{}\"".format(idx+1, len(url_items), i.url))
+            
+            # variables
             id_, _ = lib.extract_id_and_title(i.url)
-            savepath = DATA_DIR / f"{id_}.json"
+            post_data_file = DATA_DIR / f"{id_}.json"
+            post_interactions_file = DATA_DIR / f"{id_}-interact.json"
 
-            if os.path.exists(savepath) and not args.redo_scraping:
-                print('metadata already exists, continuing')
+            # scrape
+            post_data, post_inter = scrape.scrape_reddit_post_data(id_, i.url, i.tags, i.date_added)
+
+            # interactions
+            io.write_json(post_inter.json(), post_interactions_file)
+            if args.only_update_interactions:
+                print('only scraped interactions, continuing')
+                continue
+
+            # post data
+            if not post_data_file.exists():
+                print('writing post data')
+                io.write_json(post_data.json(), post_data_file)
+
+            # skip media download
+            if args.no_media_download:
+                print('skipping media download')
                 continue
             
-            print('requesting post soup')
-            soup = lib.fetch_reddit_url_soup(i.url)
-            post = lib.parseGwaSoup(soup)
-            post.id_ = id_
-            post.subreddit = lib.extract_subreddit(i.url)
-            post.url = lib.standardize_reddit_url(i.url)
-
-            # add user data
-            post.user_data = {
-                "user_tags": i.tags,
-                "date_added": i.date_added,
-                "date_last_scraped": str(datetime.now()).split('.')[0],
-            }
-
-            print('saving metadata to:', savepath)
-            with open(savepath, 'w') as f:
-                json.dump(post.json(), f, indent=4)
-
-    # --------------------------------------------------------------------------
-    # STEP 2: download media
-    # --------------------------------------------------------------------------
-
-    if not args.no_media_download:
-        metadata_files = sorted(DATA_DIR.glob('*.json'))
-        for idx, file in enumerate(metadata_files):
-            id_ = file.stem
-            print('[{}/{}] checking media for id: {}'.format(idx+1, len(metadata_files), id_))
-
-            # check media exists
-            post_media_dir = offline_site_path / "media" / id_
-            if any(post_media_dir.glob('*')):
-                print('media exists for post, continuing')
-                continue
-
-            # get soup and a_els
-            with open(file, 'r') as f:
-                post_data = json.load(f)
-            soup = BeautifulSoup(post_data['body_html'], 'html.parser')
+            # [3/3] download media
+            # TODO: put into a function
+            soup = BeautifulSoup(post_data.body_html, 'html.parser')
             a_els_to_handle = soup.select('a.media-link:not([data-something])')
             a_els_handled = 0
-
+            
             # handle media download
             for a_idx, a_el in enumerate(a_els_to_handle):
                 href = str(a_el.get("href", ""))
                 assert href != ""
                 ytdlp_data = lib.getUrlData(str(href))
                 assert isinstance(ytdlp_data, dict) and len(ytdlp_data) != 0
-                media_id, media_title, extractor, ext = ytdlp_data['id'], ytdlp_data['title'], ytdlp_data['extractor'], ytdlp_data['ext']
+
+                media_id = ytdlp_data['id']
+                media_title = ytdlp_data['title']
+                extractor = ytdlp_data['extractor']
+                ext = ytdlp_data['ext']
 
                 # 
                 savepath_rel = Path("media") / id_ / f"[{extractor}] [{media_id}] {media_title}.{ext}"
@@ -118,15 +102,12 @@ def main(url_items: list[lib.URLItem], args: MainArgs):
                         print('oh no, something went boo boo')
                     a_el["data-local-media-src"] = str(savepath_rel)
                     a_els_handled += 1
-            
-            # save updates to data
-            if a_els_handled > 0:
-                post_data["body_html"] = soup.prettify()
-                with open(file, 'w') as f:
-                    json.dump(post_data, f, indent=4)
-            
+
+            # update data_file
+            ...
+
     # --------------------------------------------------------------------------
-    # STEP 3: create offline site
+    # STEP 2: create offline site
     # --------------------------------------------------------------------------
 
     if not args.no_site:
@@ -138,31 +119,8 @@ def main(url_items: list[lib.URLItem], args: MainArgs):
         # download jquery (if using)
         ...
 
-        # create post html files
-        with open('post_template.html', 'r') as f:
-            post_template = ''.join(f.readlines())
-        
-        postsData = {}
-        for file in DATA_DIR.glob('*.json'):
-            id_ = file.stem
-            print('id:', id_)
-            savepath = POSTS_DIR / f"{id_}.html"
-            savepath.parent.mkdir(exist_ok=True)
-            with open(file, 'r') as f:
-                data = json.load(f)
-            json_str = json.dumps(data, indent=4)
-            post_template = post_template.replace("/*STARTREPLACE*/{}/*ENDREPLACE*/", json_str)
-            with open(savepath, 'w') as f:
-                f.write(post_template)
-            
-            # save to postData
-            del data["comments"]; del data["body_html"]
-            postsData[id_] = data
-
-        # create home page data
-        savepath = offline_site_path / "home-page-data.js"
-        with open(savepath, 'w') as f:
-            f.write(f"const posts = {json.dumps(postsData, indent=4)};\n")
+        # save post overview data into `data/_general.json`
+        ...
 
     # END MAIN
         
@@ -252,7 +210,10 @@ def cli():
     # cookies
     if args.cookies_from_browser:
         raise NotImplementedError("not cookies from browser")
-    __COOKIES__ = args.cookies
+    constants.__COOKIES__ = args.cookies
+    if not Path(args.cookies).exists():
+        print('\nerror: please ensure cookies.txt exists in the current directory')
+        exit(1)
     
     # main
     print()
