@@ -94,11 +94,25 @@ def main(url_items: list[url.URLItem], args: MainArgs):
     if not args.no_site:
 
         # save post overview data into `data/_general.json`
-        ...
+        files = sorted(Path('data').glob('*.json'))
+        d = {}
+        for file in files:
+            id_ = file.stem.split('-')[0]
+            inters = 'interact' in file.stem
+            # print(file)
+            data = io.read_json(file)
+            if not inters:
+                del data["body_html"]
+            else:
+                data["comment_count"] = len(data["comments"])
+                del data["comments"]
+            d[id_] = data | d.get(id_, {})
+        io.write_json(d, 'post_previews.json')
+        
 
         # copy site template files
         print('copying site_template')
-        # helpers.copy_frontend()
+        helpers.copy_frontend()
 
         # download jquery (if using)
         ...
@@ -158,7 +172,8 @@ def cli():
     parser.add_argument("--browser-profile", default="Default", help="Give the browser profile name")
     
     # feed select # TODO: implement
-    parser.add_argument("--feed", default="best", choices=["best", "top", "new"], help="")
+    parser.add_argument("--subreddit", default="GoneWildAudio", help="")
+    parser.add_argument("--feed", choices=["best", "top", "new"], help="")
     parser.add_argument("--feed-sort", default="all", choices=["all", "year", "month"], help="")
     parser.add_argument("--feed-limit", type=int, help="")
     
@@ -181,7 +196,7 @@ def cli():
     args = parser.parse_args()
 
     # SPLASH ❤️
-    print('\nWelcome to r/GoneWildAudio downloader! ❤️\n')
+    print('\nWelcome to r/GoneWildAudio downloader! ❤️')
 
     # get url items
     url_items, ret_code = get_url_items(args)

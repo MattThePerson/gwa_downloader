@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Post</title>
+</head>
+<body>
+    
+
+    <script>
+
+        // get url params
+        const params = new URLSearchParams(window.location.search);
+        const postId = params.get("id");
+        console.log('postId:', postId);
+        
+        // post data
+        fetch(`../data/${postId}.json`)
+            .then(res => {
+                return res.json()
+            })
+            .then(data => {
+                console.log('post data:', data);
+            })
+            .catch(err => {
+                console.error('unable to get post_previews.json:', err);
+                
+        });
+        
+        // post interactions
+        fetch(`../data/${postId}-interact.json`)
+            .then(res => {
+                return res.json()
+            })
+            .then(data => {
+                console.log('post interactions:', data);
+            })
+            .catch(err => {
+                console.error('unable to get post_previews.json:', err);
+                
+        });
+        
+    </script>
+    
+</body>
+</html>

@@ -9,3 +9,6 @@ uv.lock
 # 
 links_to_test.txt
 _testing
+
+# temp
+mock_data_gen.py
